@@ -1,0 +1,26 @@
+# 禅道 · 团队早会助手 —— 插件自带的行声明（供 bundle 安装时按包名引用）。
+#
+# 方式 A（bundle 安装）：通过插件管理器（设置→插件 / plugin_manager）安装本目录，
+#   DSH 会把它装进 profile 的 node_modules 并写入 dsh.profile.bundles，重启生效。
+#   此时 name 用包名即可被 Node 模块解析找到（下面默认值）。
+#
+# 方式 B（源码 checkout 一次性加载）：
+#   pnpm dsh web --patch ./dsh-zentao-standup/cordis.patch.yml
+#   此时需把下面 name 改成 src/index.ts 或 dist/index.js 的绝对路径：
+#   name: '/Volumes/LZ_Storage/deepseek-normal/dsh-zentao-standup/src/index.ts'
+- insert:
+    - id: zentao-standup
+      name: dsh-zentao-standup
+      config:
+        # 禅道服务器地址（含协议，可带子目录），例如 http://192.168.1.100/zentao
+        baseUrl: http://127.0.0.1/zentao
+        # 禅道登录账号（需要具有查看项目/迭代/任务/成员的权限）
+        account: admin
+        # 禅道登录密码
+        password: 'CHANGE_ME'
+        # 单次请求超时（毫秒）
+        timeoutMs: 15000
+        # 列表默认返回条数上限
+        limit: 100
+        # 是否注册「早会主持人」人设段落（Agent 预设方式用 false，人设由 preset 提供）
+        persona: false

@@ -1,0 +1,16 @@
+# 精简冒烟测试组合：只挂载 systemPrompt + tools 子系统，不启动完整 DSH。
+# 运行：./examples/run.sh
+- name: '@deepseek-ai/dsh-system-prompt'
+- name: '@deepseek-ai/dsh-tools'
+
+# 被测插件（指向已构建的 dist/index.js；mock 服务器由 driver.ts 启动）。
+- name: '../dist/index.js'
+  config:
+    baseUrl: http://127.0.0.1:18899
+    account: admin
+    password: 'mock-pass'
+    timeoutMs: 5000
+    limit: 100
+
+# 代替模型依次调用 7 个工具，并在结束时退出。
+- name: './driver.ts'
