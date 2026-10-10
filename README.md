@@ -27,88 +27,78 @@
 ```
 dsh-zentao-standup/
 ├── src/index.ts          # 主插件：Config + ZenTao 客户端 + 7 个工具 + 人设
-├── dist/index.js         # esbuild 打包产物（被 preset/bundle 加载的就是它）
-├── preset/
-│   ├── preset.yml        # 预设元数据
-│   └── agent.cordis.yml  # 预设组装：早会主持人人设 + 引用工具
-├── scripts/install.mjs   # 预设安装脚本（自动改写插件绝对路径）
+├── dist/index.js         # esbuild 打包产物（bundle 加载的就是它）
+├── preset/               # 遗留的 Agent 预设（已不推荐，见下文「配置方式」）
 ├── examples/             # 冒烟测试（内置 mock 禅道服务器，无需真实禅道）
-├── cordis.patch.yml      # bundle 安装用的行声明
+├── cordis.patch.yml      # bundle 安装用的行声明（含占位默认配置）
 ├── package.json
 └── README.md
 ```
 
-## 快速开始（作为 Agent 预设，推荐）
+## 快速开始（bundle 安装，推荐）
 
-```bash
-cd dsh-zentao-standup
-node scripts/install.mjs --apply
-```
+1. **安装插件**：在 DSH 的「设置 → 插件」里从 GitHub 安装，或命令行：
 
-然后**编辑** `~/.dsh/.agent-presets/zentao-standup/agent.cordis.yml`，把 `zentao-standup`
-一行的 `config.baseUrl / account / password` 改成你自己的禅道服务器地址与账号密码：
+   ```bash
+   dsh plugin add github:Lz020316/dsh-zentao-standup
+   ```
 
-```yaml
-config:
-  baseUrl: http://你的禅道服务器地址/zentao   # 例如 http://192.168.1.100/zentao
-  account: admin                              # 你的登录账号
-  password: '你的密码'                          # 你的登录密码
-```
+2. **配置禅道**：编辑 `$DSH_HOME/profiles/<profile>/cordis.patch.yml`，追加一段 id 定向覆盖
+   （这是**唯一的配置位置**）：
 
-最后**完全退出并重新打开北极星（DeepSeek Harness 桌面版）**，新建会话时在「模式选择」里选
-**「团队早会主持人」**，直接说：
+   ```yaml
+   - id: zentao-standup
+     name: "dsh-zentao-standup"
+     config:
+       baseUrl: https://你的禅道地址          # 不要带末尾斜杠，如 https://zentao.example.com
+       account: 你的登录账号                  # 需有查看项目/迭代/任务/成员的权限
+       password: '你的登录密码'
+       timeoutMs: 15000
+       limit: 100
+       persona: true                          # true 时全局注册「早会主持人」人设
+   ```
 
-> 今天开早会，帮我拉一下项目进展和每个人的任务。
+3. **重启北极星**，直接说：
 
-它会用 `zentao_standup` 自动生成简报，你也可以让它下钻到某个人/某个项目/某个任务。
+   > 今天开早会，帮我拉一下项目进展和每个人的任务。
 
-## 安装方式
+   它会用 `zentao_standup` 自动生成简报，你也可以让它下钻到某个人/某个项目/某个任务。
 
-### A. Agent 预设（推荐）
+> 💡 **懒人配置**：不想手改 YAML？在会话里直接说
+> 「配置禅道：地址 xxx、账号 xxx、密码 xxx」，让 DSH 帮你写进上面的位置并验证连通。
 
-如上，用 `scripts/install.mjs --apply`，或手动复制：
+## 配置方式（重要）
 
-```bash
-mkdir -p ~/.dsh/.agent-presets/zentao-standup
-cp preset/preset.yml ~/.dsh/.agent-presets/zentao-standup/
-cp preset/agent.cordis.yml ~/.dsh/.agent-presets/zentao-standup/
-# 然后把 agent.cordis.yml 里 zentao-standup 那一行的 name: 改成你本机 dist/index.js 的绝对路径，
-# 并填入 baseUrl/account/password
-```
+**配置只有一个地方**：`$DSH_HOME/profiles/<profile>/cordis.patch.yml` 里 `id: zentao-standup`
+这一段。改这里保存即热重载（运行中的会话需重启才重新加载）。
 
-### B. 挂到某个 profile（全局生效）
-
-把下面的条目追加到 `$DSH_HOME/profiles/<profile>/cordis.patch.yml`（保存即热重载）：
-
-```yaml
-- insert:
-    - id: zentao-standup
-      name: '/Volumes/LZ_Storage/deepseek-normal/dsh-zentao-standup/dist/index.js'
-      config:
-        baseUrl: http://你的禅道地址/zentao
-        account: admin
-        password: '你的密码'
-        timeoutMs: 15000
-        limit: 100
-        persona: true     # 全局挂载时建议 true，自动带上「早会主持人」人设
-```
-
-### C. 作为 bundle 安装
-
-```bash
-dsh plugin --profile <你的profile> add ./dsh-zentao-standup-1.0.0.tgz
-```
-
-## 配置（Config）
+> ⚠️ **不要用 `preset/` 里的 Agent 预设方式**：它把配置内联在预设文件里，与 bundle 的
+> 默认配置是两套，容易"改了却不见效"。`preset/` 目录仅为历史遗留保留，不推荐使用。
 
 | 字段 | 说明 | 默认 |
 | --- | --- | --- |
-| `baseUrl` | 禅道服务器地址（含协议，可带子目录），如 `http://192.168.1.100/zentao` | 必填 |
+| `baseUrl` | 禅道服务器地址（含协议，可带子目录），如 `https://zentao.example.com/zentao` | 必填 |
 | `account` | 禅道登录账号（需有查看项目/迭代/任务/成员的权限） | 必填 |
 | `password` | 禅道登录密码 | 必填 |
 | `timeoutMs` | 单次 HTTP 请求超时（毫秒） | `15000` |
 | `limit` | 列表类接口默认返回条数上限 | `100` |
-| `persona` | 是否注册「早会主持人」人设段落（Agent 预设方式用 `false`，人设由 preset 提供） | `false` |
+| `persona` | 是否注册「早会主持人」人设段落 | `false` |
+
+## 其他安装方式
+
+### 源码 checkout（一次性加载）
+
+```bash
+pnpm dsh web --patch ./dsh-zentao-standup/cordis.patch.yml
+```
+
+此时需把 `cordis.patch.yml` 里的 `name` 改成 `src/index.ts` 或 `dist/index.js` 的绝对路径。
+
+### tarball 安装
+
+```bash
+dsh plugin --profile <你的profile> add ./dsh-zentao-standup-1.0.0.tgz
+```
 
 ## 构建
 
@@ -124,14 +114,15 @@ npx --yes esbuild src/index.ts --bundle --format=esm --platform=node \
 
 ## 依赖的禅道 API（版本要求）
 
-本插件调用禅道**开放 REST API v1**（`api.php/v1`），适用于**禅道 18.x 及更高版本**的开源版/企业版。
-首次使用请确认你的禅道服务器已开启 REST API（开源版默认开启），并确认账号有相应查看权限。
+本插件调用禅道**开放 REST API v1**（`api.php/v1`），适用于**禅道 18.x 及更高版本**
+（已在 **22.6** 上验证）。首次使用请确认你的禅道服务器已开启 REST API（开源版默认开启），
+并确认账号有相应查看权限。
 
 用到的端点：
 
 | 端点 | 用途 |
 | --- | --- |
-| `POST /api.php/v1/tokens` | 认证，拿 token |
+| `POST /api.php/v1/tokens` | 认证，拿 token（之后用 `Token` 请求头调用） |
 | `GET /api.php/v1/projects` | 项目列表（含进度/状态） |
 | `GET /api.php/v1/projects/{id}/executions` | 项目下的迭代 |
 | `GET /api.php/v1/users` | 成员列表 |
@@ -141,10 +132,18 @@ npx --yes esbuild src/index.ts --bundle --format=esm --platform=node \
 
 ## 排查：连不上怎么办
 
-1. **连接失败**：确认 `baseUrl` 可访问（浏览器打开 `http://地址/zentao` 应能看到禅道登录页）。
+1. **连接失败**：确认 `baseUrl` 可访问（浏览器打开该地址应能看到禅道登录页）。
 2. **认证失败**：确认 `account / password` 正确，且账号没被锁定。
 3. **查不到数据/报 400**：确认该账号在禅道里有「项目 / 迭代 / 任务 / 成员」的查看权限。
-4. **服务器未开启 API**：确认禅道版本 ≥ 18，且 REST API 已启用。
+4. **改了配置没生效**：确认改的是 `profiles/<profile>/cordis.patch.yml` 里 `id: zentao-standup`
+   这一段（不是别的文件），并重启会话。
+5. **服务器未开启 API**：确认禅道版本 ≥ 18，且 REST API 已启用。
+
+## Roadmap
+
+- [ ] 「设置 → 插件 → 插件配置」里的图形化输入框（需为插件补一套客户端 `dsh.client` 卡片 bundle）
+- [ ] 需求（Story）进度、待办（todo）、Bug 列表等只读项
+- [ ] （可选）写操作：创建任务 / 更新任务状态 / 记录工时
 
 ## License
 
