@@ -10,23 +10,30 @@
 
 ## 它能做什么
 
-| 工具 | 作用 |
-| --- | --- |
-| `zentao_standup` | **一键生成「每日早会简报」**：项目进展 + 每人任务 + 逾期/风险汇总 |
-| `zentao_projects` | 所有项目列表与进度总览（状态/进度/负责人/周期） |
-| `zentao_project` | 单个项目详情 + 该项目下的迭代（执行）列表 |
-| `zentao_users` | 团队成员列表（账号 + 姓名） |
-| `zentao_tasks` | 任务列表，按负责人/状态/迭代/优先级灵活筛选 |
-| `zentao_user_tasks` | 某个成员名下的所有任务，按状态分组并标出逾期 |
-| `zentao_task` | 单个任务详情（负责人/状态/优先级/进度/工时/截止） |
+| 工具 | 作用 | 类型 |
+| --- | --- | --- |
+| `zentao_standup` | **一键生成「每日早会简报」**：项目进展 + 每人任务 + 逾期/风险汇总 | 读 |
+| `zentao_projects` | 所有项目列表与进度总览（状态/进度/负责人/周期） | 读 |
+| `zentao_project` | 单个项目详情 + 该项目下的迭代（执行）列表 | 读 |
+| `zentao_users` | 团队成员列表（账号 + 姓名） | 读 |
+| `zentao_tasks` | 任务列表，按负责人/状态/迭代/优先级灵活筛选 | 读 |
+| `zentao_user_tasks` | 某个成员名下的所有任务，按状态分组并标出逾期 | 读 |
+| `zentao_task` | 单个任务详情（负责人/状态/优先级/进度/工时/截止） | 读 |
+| `zentao_task_update` | **更新任务字段**：描述 / 负责人 / 截止日期 / 优先级 / 预估工时 / 名称 / 状态 | **写** |
+| `zentao_task_action` | **任务状态流转**：start / finish / close / pause / activate / restart | **写** |
+| `zentao_task_create` | **创建新任务**（需指定迭代、负责人、类型、起止日期） | **写** |
 
-全部为**只读**操作，不会改动禅道里的任何数据。
+共 **10 个工具**：7 个只读 + 3 个写操作。
+
+> ⚠️ **写操作会真实修改禅道数据。** 三个写工具（`zentao_task_update` / `zentao_task_action` /
+> `zentao_task_create`）在调用前，AI 应先向你把要改的内容说清楚、经你确认后再执行。
+> 如果只想查询、不想冒任何改动风险，就不调用这三个写工具即可。
 
 ## 目录结构
 
 ```
 dsh-zentao-standup/
-├── src/index.ts          # 主插件：Config + ZenTao 客户端 + 7 个工具 + 人设
+├── src/index.ts          # 主插件：Config + ZenTao 客户端 + 10 个工具 + 人设
 ├── dist/index.js         # esbuild 打包产物（bundle 加载的就是它）
 ├── preset/               # 遗留的 Agent 预设（已不推荐，见下文「配置方式」）
 ├── examples/             # 冒烟测试（内置 mock 禅道服务器，无需真实禅道）
@@ -141,9 +148,11 @@ npx --yes esbuild src/index.ts --bundle --format=esm --platform=node \
 
 ## Roadmap
 
+- [x] 任务写操作：创建任务 / 更新任务字段 / 状态流转（start·finish·close·pause·activate·restart）
 - [ ] 「设置 → 插件 → 插件配置」里的图形化输入框（需为插件补一套客户端 `dsh.client` 卡片 bundle）
-- [ ] 需求（Story）进度、待办（todo）、Bug 列表等只读项
-- [ ] （可选）写操作：创建任务 / 更新任务状态 / 记录工时
+- [ ] 需求（Story）、Bug、待办（todo）的查询与写操作
+- [ ] 项目 / 迭代（执行）层面的写操作（关闭项目、创建/续期迭代等）
+- [ ] 写操作的强制审批机制（让 AI 必须先经用户确认再落库，而非仅靠描述约束）
 
 ## License
 

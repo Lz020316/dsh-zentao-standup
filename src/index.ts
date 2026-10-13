@@ -244,6 +244,35 @@ class ZentaoClient {
   async task(id: number) {
     return this.request<any>(`tasks/${id}`)
   }
+
+  // ── 写操作 ──
+
+  /** 更新任务字段（PUT /tasks/{id}）。只传要改的字段，其余由禅道用旧值兜底。 */
+  async updateTask(id: number, fields: Record<string, unknown>) {
+    return this.request<any>(`tasks/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    })
+  }
+
+  /** 创建任务（POST /executions/{id}/tasks）。 */
+  async createTask(executionId: number, fields: Record<string, unknown>) {
+    return this.request<any>(`executions/${executionId}/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    })
+  }
+
+  /** 任务状态流转（POST /tasks/{id}/{action}），如 start/finish/close/pause/activate/restart。 */
+  async taskAction(id: number, action: string, body: Record<string, unknown> = {}) {
+    return this.request<any>(`tasks/${id}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
 }
 
 // ──────────────────────────────── 渲染工具函数 ────────────────────────────────
@@ -343,6 +372,20 @@ function renderTask(task: any): string {
   lines.push(`- 预计开始：${day(task.estStarted)}`)
   lines.push(`- 截止日期：${day(task.deadline)}`)
   if (task.desc) lines.push(`- 描述：${String(task.desc).slice(0, 500)}`)
+  return lines.join('\n')
+}
+
+/** 渲染一次写操作的结果：成功确认 + 任务关键字段回读。 */
+function renderWriteResult(label: string, task: any): string {
+  if (!task) return `✅ ${label} 已完成`
+  const assignee =
+    typeof task.assignedTo === 'object' && task.assignedTo ? task.assignedTo.account ?? task.assignedTo.realname : task.assignedTo
+  const lines: string[] = [`✅ ${label} 已完成`]
+  lines.push('')
+  lines.push(`- 任务：#${task.id ?? '-'} ${task.name ?? ''}`)
+  lines.push(`- 状态：${statusOf(TASK_STATUS, task.status)}`)
+  lines.push(`- 负责人：${assignee ?? '-'}`)
+  lines.push(`- 截止：${day(task.deadline)}`)
   return lines.join('\n')
 }
 
@@ -649,6 +692,110 @@ function registerTools(ctx: Context, config: Config, client: ZentaoClient) {
       },
     }),
   )
+
+  // ──────────────────────────────── 写操作工具 ────────────────────────────────
+
+  ctx.tools.register(
+    defineTool({
+      name: 'zentao_task_update',
+      description:
+        '⚠️ 写操作：更新禅道任务的字段（描述/负责人/截止日期/优先级/预估工时/名称/状态等），只传要改的字段即可。用于补描述、派负责人、改期、销账等数据治理动作。会真实修改禅道数据，调用前务必先向用户确认。',
+      parameters: {
+        id: { type: 'number', required: true, description: '任务 ID。' },
+        name: { type: 'string', description: '可选：任务名称。' },
+        desc: { type: 'string', description: '可选：任务描述。' },
+        assignedTo: { type: 'string', description: '可选：负责人账号（派负责人/转派）。' },
+        deadline: { type: 'string', description: '可选：截止日期，格式 YYYY-MM-DD（改期）。' },
+        estStarted: { type: 'string', description: '可选：预计开始日期，格式 YYYY-MM-DD。' },
+        pri: { type: 'string', description: '可选：优先级 1-4（1 最高）。' },
+        estimate: { type: 'number', description: '可选：预估工时（小时）。' },
+        status: { type: 'string', description: '可选：直接改状态（wait/doing/done/pause/cancel/closed）。改状态更推荐用 zentao_task_action。' },
+      },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      async execute(args) {
+        const a = args as Record<string, any>
+        const fields: Record<string, unknown> = {}
+        for (const k of ['name', 'desc', 'assignedTo', 'deadline', 'estStarted', 'pri', 'estimate', 'status']) {
+          if (a[k] !== undefined && a[k] !== '') fields[k] = a[k]
+        }
+        if (Object.keys(fields).length === 0) return '（没有提供任何要更新的字段，未做改动）'
+        const task = await client.updateTask(a.id, fields)
+        return renderWriteResult(`任务 #${a.id} 更新`, task)
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'zentao_task_action',
+      description:
+        '⚠️ 写操作：对禅道任务执行状态流转。action 可选 start（开始）/ finish（完成）/ close（关闭）/ pause（暂停）/ activate（激活，从暂停恢复）/ restart（重启）。用于销账、暂停、重启、关闭等。会真实修改禅道数据，调用前务必先向用户确认。',
+      parameters: {
+        id: { type: 'number', required: true, description: '任务 ID。' },
+        action: { type: 'string', required: true, description: '流转动作：start / finish / close / pause / activate / restart。' },
+        comment: { type: 'string', description: '可选：备注。' },
+        consumed: { type: 'number', description: '可选：本次耗时（小时），start/finish 时可用。' },
+        left: { type: 'number', description: '可选：剩余工时（小时），start 时可用。' },
+        finishedDate: { type: 'string', description: '可选：完成日期 YYYY-MM-DD，finish 时用（缺省为今天）。' },
+      },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      async execute(args) {
+        const body: Record<string, unknown> = {}
+        if (args.comment) body.comment = args.comment
+        if (args.consumed !== undefined) body.consumed = args.consumed
+        if (args.left !== undefined) body.left = args.left
+        if (args.action === 'finish') {
+          body.finishedDate = args.finishedDate || new Date().toISOString().slice(0, 10)
+          if (args.consumed !== undefined) body.currentConsumed = args.consumed
+        }
+        const task = await client.taskAction(args.id, args.action, body)
+        return renderWriteResult(`任务 #${args.id} ${args.action}`, task)
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'zentao_task_create',
+      description:
+        '⚠️ 写操作：在指定迭代（执行）下创建新任务。taskType 取值：devel（开发）/ design（设计）/ request（需求）/ test（测试）/ study（研究）/ discuss（讨论）/ ui（界面）/ affair（事务）/ misc（其他）。会真实修改禅道数据，调用前务必先向用户确认。',
+      parameters: {
+        executionId: { type: 'number', required: true, description: '迭代（执行）ID。' },
+        name: { type: 'string', required: true, description: '任务名称（建议含交付物）。' },
+        assignedTo: { type: 'string', required: true, description: '负责人账号。' },
+        taskType: { type: 'string', required: true, description: '任务类型：devel/design/request/test/study/discuss/ui/affair/misc。' },
+        estStarted: { type: 'string', required: true, description: '预计开始日期 YYYY-MM-DD。' },
+        deadline: { type: 'string', required: true, description: '截止日期 YYYY-MM-DD。' },
+        pri: { type: 'string', description: '可选：优先级 1-4（1 最高）。' },
+        estimate: { type: 'number', description: '可选：预估工时（小时）。' },
+        desc: { type: 'string', description: '可选：任务描述。' },
+      },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      async execute(args) {
+        const fields: Record<string, unknown> = {
+          name: args.name,
+          assignedTo: args.assignedTo,
+          type: args.taskType,
+          estStarted: args.estStarted,
+          deadline: args.deadline,
+        }
+        if (args.pri) fields.pri = args.pri
+        if (args.estimate !== undefined) fields.estimate = args.estimate
+        if (args.desc) fields.desc = args.desc
+        const task = await client.createTask(args.executionId, fields)
+        return renderWriteResult('任务创建', task)
+      },
+    }),
+  )
 }
 
 // ──────────────────────────────── 插件入口 ────────────────────────────────
@@ -665,5 +812,5 @@ export function apply(ctx: Context, config: Config) {
   const client = new ZentaoClient(config)
   registerTools(ctx, config, client)
 
-  console.log(`[zentao-standup] 已加载（baseUrl=${config.baseUrl.replace(/\/+$/, '')}，工具=7，persona=${config.persona}）`)
+  console.log(`[zentao-standup] 已加载（baseUrl=${config.baseUrl.replace(/\/+$/, '')}，工具=10，persona=${config.persona}）`)
 }

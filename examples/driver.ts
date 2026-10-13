@@ -46,9 +46,33 @@ function send(res: any, status: number, body: any) {
   res.end(JSON.stringify(body))
 }
 
+function readBody(req: any): Promise<any> {
+  return new Promise((resolve) => {
+    let raw = ''
+    req.on('data', (c) => (raw += c))
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(raw || '{}'))
+      } catch {
+        resolve({})
+      }
+    })
+  })
+}
+
+const ACTION_STATUS: Record<string, string> = {
+  start: 'doing',
+  finish: 'done',
+  close: 'closed',
+  pause: 'pause',
+  activate: 'doing',
+  restart: 'doing',
+  cancel: 'cancel',
+}
+
 function startMockServer(): Promise<Server> {
   return new Promise((resolve) => {
-    const server = createServer((req, res) => {
+    const server = createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
       const path = url.pathname
       const q = url.searchParams
@@ -97,18 +121,42 @@ function startMockServer(): Promise<Server> {
         return send(res, 200, { users: USERS, total: USERS.length, limit: 100 })
       }
 
-      // 5) GET /api.php/v1/executions/{id}/tasks
+      // 5) GET/POST /api.php/v1/executions/{id}/tasks
       const execTasks = path.match(/^\/api.php\/v1\/executions\/(\d+)\/tasks$/)
       if (execTasks) {
+        if (req.method === 'POST') {
+          const body = await readBody(req)
+          const newId = Math.max(...TASKS.map((x) => x.id)) + 1
+          const task = { id: newId, progress: 0, consumed: 0, status: 'wait', ...body }
+          TASKS.push(task)
+          return send(res, 201, task)
+        }
         return send(res, 200, { tasks: TASKS.slice(0, 3), total: 3 })
       }
 
-      // 6) GET /api.php/v1/tasks/{id}
+      // 6) GET/PUT /api.php/v1/tasks/{id}
       const oneTask = path.match(/^\/api.php\/v1\/tasks\/(\d+)$/)
       if (oneTask) {
         const id = Number(oneTask[1])
         const t = TASKS.find((x) => x.id === id)
+        if (req.method === 'PUT') {
+          if (!t) return send(res, 404, { message: 'task not found' })
+          Object.assign(t, await readBody(req))
+          return send(res, 200, t)
+        }
         return t ? send(res, 200, t) : send(res, 404, { message: 'task not found' })
+      }
+
+      // 6b) POST /api.php/v1/tasks/{id}/{action}（状态流转）
+      const taskAction = path.match(/^\/api.php\/v1\/tasks\/(\d+)\/(\w+)$/)
+      if (taskAction && req.method === 'POST') {
+        const id = Number(taskAction[1])
+        const action = taskAction[2]
+        const t = TASKS.find((x) => x.id === id)
+        if (!t) return send(res, 404, { message: 'task not found' })
+        const status = ACTION_STATUS[action]
+        if (status) t.status = status
+        return send(res, 200, t)
       }
 
       // 7) GET /api.php/v1/tasks?search=1&assignedTo=...&status=...
@@ -168,6 +216,39 @@ export function apply(ctx: Context) {
       await run('成员任务 zentao_user_tasks（zhangsan）', 'zentao_user_tasks', { account: 'zhangsan' })
       await run('任务详情 zentao_task（id=103）', 'zentao_task', { id: 103 })
       await run('早会简报 zentao_standup', 'zentao_standup', {})
+
+      // ── 写操作 ──
+      await run('写·更新任务 zentao_task_update（补描述+改负责人）', 'zentao_task_update', {
+        id: 103, desc: '从旧库迁移用户数据（补充的描述）。', assignedTo: 'zhangsan',
+      })
+      await run('写·改期 zentao_task_update（deadline）', 'zentao_task_update', { id: 103, deadline: '2027-01-31' })
+      await run('写·状态流转 zentao_task_action（finish #104）', 'zentao_task_action', { id: 104, action: 'finish', comment: '测试完成' })
+      await run('写·创建任务 zentao_task_create', 'zentao_task_create', {
+        executionId: 11, name: '新增·接口压测', assignedTo: 'lisi', taskType: 'test',
+        estStarted: '2026-10-13', deadline: '2026-10-20', pri: '2', estimate: 8,
+      })
+
+      // 写后校验：103 已转给 zhangsan；新任务已建在 lisi 名下。
+      const zhangsanTasks = textOf(
+        await ctx.tools.execute({
+          callId: brandString<ToolCallId>('w1'),
+          name: 'zentao_tasks',
+          arguments: { assignedTo: 'zhangsan' },
+          signal: new AbortController().signal,
+        }),
+      )
+      const ok103 = zhangsanTasks.includes('103')
+      const lisiTasks = textOf(
+        await ctx.tools.execute({
+          callId: brandString<ToolCallId>('w2'),
+          name: 'zentao_tasks',
+          arguments: { assignedTo: 'lisi' },
+          signal: new AbortController().signal,
+        }),
+      )
+      const okNew = lisiTasks.includes('新增·接口压测')
+      console.log(`\n[driver] 写后校验：103 已转给 zhangsan=${ok103 ? '是 ✅' : '否 ❌'}；新任务已建=${okNew ? '是 ✅' : '否 ❌'}`)
+      if (!ok103 || !okNew) failed = true
 
       // 额外断言：早会简报应包含逾期任务 103。
       const standup = textOf(
