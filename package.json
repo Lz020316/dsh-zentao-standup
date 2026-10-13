@@ -1,18 +1,17 @@
 {
-  "name": "dsh-zentao-standup",
+  "name": "dsh-zentao",
   "version": "1.0.0",
-  "description": "禅道 · 团队早会助手：小团队负责人的 ZenTao 管理插件，每天开早会时一键拉取每个项目的情况与每个人的工作任务情况。可作为 DeepSeek Harness 的 Agent 预设，也可作为 bundle 安装。",
+  "description": "禅道 · 禅道管理助手：小团队负责人的 ZenTao 管理插件，覆盖项目/迭代/成员/任务的查询、任务与项目/执行的写操作（销账、改期、派活、建项目、建迭代），并一键生成每日早会简报。可作为 DeepSeek Harness 的 Agent 预设，也可作为 bundle 安装。",
   "keywords": [
     "deepseek-harness",
     "dsh",
     "cordis",
     "zentao",
     "禅道",
-    "standup",
-    "早会",
-    "晨会",
+    "项目管理",
     "团队管理",
-    "项目管理"
+    "早会",
+    "standup"
   ],
   "license": "MIT",
   "type": "module",

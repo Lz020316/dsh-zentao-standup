@@ -1,12 +1,13 @@
-# 禅道 · 团队早会助手（dsh-zentao-standup）
+# 禅道 · 禅道管理助手（dsh-zentao）
 
 面向**小团队负责人**的 [禅道（ZenTao）](https://www.zentao.net) 管理插件，跑在 DeepSeek Harness（DSH）上。
-每天开早会（晨会/站会）时，一键拉取：
+覆盖项目管理的完整闭环：
 
-- ✅ **每个项目的情况** —— 项目状态、进度百分比、负责人、起止/截止日期
-- ✅ **每个人的工作任务情况** —— 进行中 / 待开始 / 已完成任务，自动标出**逾期**任务
+- ✅ **查询**：项目 / 迭代 / 成员 / 任务，自动标出**逾期**
+- ✅ **数据治理（写操作）**：销账、改期、派负责人、派活、建项目、建迭代
+- ✅ **每日早会简报**：一键汇总项目进展 + 每人任务 + 风险
 
-它把禅道的客观数据整理成一份**结构化早会简报**，负责人可以直接照着开早会，团队同步进展。
+它既是团队的数据看板，也是负责人做数据治理的抓手。
 
 ## 它能做什么
 
@@ -35,7 +36,7 @@
 ## 目录结构
 
 ```
-dsh-zentao-standup/
+dsh-zentao/
 ├── src/index.ts          # 主插件：Config + ZenTao 客户端 + 13 个工具 + 人设
 ├── dist/index.js         # esbuild 打包产物（bundle 加载的就是它）
 ├── preset/               # 遗留的 Agent 预设（已不推荐，见下文「配置方式」）
@@ -50,22 +51,22 @@ dsh-zentao-standup/
 1. **安装插件**：在 DSH 的「设置 → 插件」里从 GitHub 安装，或命令行：
 
    ```bash
-   dsh plugin add github:Lz020316/dsh-zentao-standup
+   dsh plugin add github:Lz020316/dsh-zentao
    ```
 
 2. **配置禅道**：编辑 `$DSH_HOME/profiles/<profile>/cordis.patch.yml`，追加一段 id 定向覆盖
    （这是**唯一的配置位置**）：
 
    ```yaml
-   - id: zentao-standup
-     name: "dsh-zentao-standup"
+   - id: zentao
+     name: "dsh-zentao"
      config:
        baseUrl: https://你的禅道地址          # 不要带末尾斜杠，如 https://zentao.example.com
        account: 你的登录账号                  # 需有查看项目/迭代/任务/成员的权限
        password: '你的登录密码'
        timeoutMs: 15000
        limit: 100
-       persona: true                          # true 时全局注册「早会主持人」人设
+       persona: true                          # true 时全局注册「禅道管理助手」人设
    ```
 
 3. **重启北极星**，直接说：
@@ -79,7 +80,7 @@ dsh-zentao-standup/
 
 ## 配置方式（重要）
 
-**配置只有一个地方**：`$DSH_HOME/profiles/<profile>/cordis.patch.yml` 里 `id: zentao-standup`
+**配置只有一个地方**：`$DSH_HOME/profiles/<profile>/cordis.patch.yml` 里 `id: zentao`
 这一段。改这里保存即热重载（运行中的会话需重启才重新加载）。
 
 > ⚠️ **不要用 `preset/` 里的 Agent 预设方式**：它把配置内联在预设文件里，与 bundle 的
@@ -92,14 +93,14 @@ dsh-zentao-standup/
 | `password` | 禅道登录密码 | 必填 |
 | `timeoutMs` | 单次 HTTP 请求超时（毫秒） | `15000` |
 | `limit` | 列表类接口默认返回条数上限 | `100` |
-| `persona` | 是否注册「早会主持人」人设段落 | `false` |
+| `persona` | 是否注册「禅道管理助手」人设段落 | `false` |
 
 ## 其他安装方式
 
 ### 源码 checkout（一次性加载）
 
 ```bash
-pnpm dsh web --patch ./dsh-zentao-standup/cordis.patch.yml
+pnpm dsh web --patch ./dsh-zentao/cordis.patch.yml
 ```
 
 此时需把 `cordis.patch.yml` 里的 `name` 改成 `src/index.ts` 或 `dist/index.js` 的绝对路径。
@@ -107,7 +108,7 @@ pnpm dsh web --patch ./dsh-zentao-standup/cordis.patch.yml
 ### tarball 安装
 
 ```bash
-dsh plugin --profile <你的profile> add ./dsh-zentao-standup-1.0.0.tgz
+dsh plugin --profile <你的profile> add ./dsh-zentao-1.0.0.tgz
 ```
 
 ## 构建
@@ -145,7 +146,7 @@ npx --yes esbuild src/index.ts --bundle --format=esm --platform=node \
 1. **连接失败**：确认 `baseUrl` 可访问（浏览器打开该地址应能看到禅道登录页）。
 2. **认证失败**：确认 `account / password` 正确，且账号没被锁定。
 3. **查不到数据/报 400**：确认该账号在禅道里有「项目 / 迭代 / 任务 / 成员」的查看权限。
-4. **改了配置没生效**：确认改的是 `profiles/<profile>/cordis.patch.yml` 里 `id: zentao-standup`
+4. **改了配置没生效**：确认改的是 `profiles/<profile>/cordis.patch.yml` 里 `id: zentao`
    这一段（不是别的文件），并重启会话。
 5. **服务器未开启 API**：确认禅道版本 ≥ 18，且 REST API 已启用。
 

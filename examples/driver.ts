@@ -8,7 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 
-export const name = 'zentao-standup-driver'
+export const name = 'zentao-driver'
 export const inject = ['tools']
 
 const PORT = 18899
