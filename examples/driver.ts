@@ -26,6 +26,9 @@ const EXECUTIONS: Record<number, any[]> = {
   ],
 }
 
+/** 扁平执行列表，写操作（创建/更新）维护它。 */
+const ALL_EXECUTIONS: any[] = Object.values(EXECUTIONS).flat()
+
 const USERS = [
   { account: 'zhangsan', realname: '张三' },
   { account: 'lisi', realname: '李四' },
@@ -101,12 +104,39 @@ function startMockServer(): Promise<Server> {
         return
       }
 
-      // 2) GET /api.php/v1/projects
+      // 2) GET/POST /api.php/v1/projects
       if (path === '/api.php/v1/projects') {
+        if (req.method === 'POST') {
+          const body = await readBody(req)
+          const newId = Math.max(...PROJECTS.map((p) => p.id)) + 1
+          const project = { id: newId, status: 'wait', progress: 0, ...body }
+          PROJECTS.push(project)
+          return send(res, 201, project)
+        }
         let list = PROJECTS
         const status = q.get('status')
         if (status && status !== 'all') list = list.filter((p) => p.status === status)
         return send(res, 200, { projects: list, total: list.length, limit: 100 })
+      }
+
+      // 2b) POST /api.php/v1/executions（创建执行）
+      if (path === '/api.php/v1/executions' && req.method === 'POST') {
+        const body = await readBody(req)
+        const newId = Math.max(0, ...ALL_EXECUTIONS.map((e) => e.id)) + 1
+        const execution = { id: newId, status: 'wait', progress: 0, ...body }
+        ALL_EXECUTIONS.push(execution)
+        if (body.project) (EXECUTIONS[body.project] ??= []).push(execution)
+        return send(res, 201, execution)
+      }
+
+      // 2c) PUT /api.php/v1/execution/{id}（更新执行）
+      const oneExec = path.match(/^\/api.php\/v1\/execution\/(\d+)$/)
+      if (oneExec && req.method === 'PUT') {
+        const id = Number(oneExec[1])
+        const e = ALL_EXECUTIONS.find((x) => x.id === id)
+        if (!e) return send(res, 404, { message: 'execution not found' })
+        Object.assign(e, await readBody(req))
+        return send(res, 200, e)
       }
 
       // 3) GET /api.php/v1/projects/{id}/executions
@@ -227,6 +257,42 @@ export function apply(ctx: Context) {
         executionId: 11, name: '新增·接口压测', assignedTo: 'lisi', taskType: 'test',
         estStarted: '2026-10-13', deadline: '2026-10-20', pri: '2', estimate: 8,
       })
+
+      // ── 项目/执行写操作 ──
+      await run('写·创建项目 zentao_project_create（融合瀑布）', 'zentao_project_create', {
+        name: '客户A/官网二期', begin: '2026-10-13', end: '2026-12-31', model: 'waterfallplus', PM: 'zhangsan',
+      })
+      await run('写·创建执行 zentao_execution_create（阶段）', 'zentao_execution_create', {
+        project: 2, name: '阶段·开发', begin: '2026-10-13', end: '2026-11-13', type: 'stage',
+      })
+      await run('写·创建执行 zentao_execution_create（子迭代）', 'zentao_execution_create', {
+        project: 2, name: '迭代1', begin: '2026-10-13', end: '2026-10-27', type: 'sprint', parent: 13,
+      })
+      await run('写·改期 zentao_execution_update', 'zentao_execution_update', {
+        id: 12, end: '2026-11-30',
+      })
+
+      // 写后校验：新项目已建、执行已建、改期已生效。
+      const projAfter = textOf(
+        await ctx.tools.execute({
+          callId: brandString<ToolCallId>('w3'),
+          name: 'zentao_projects',
+          arguments: {},
+          signal: new AbortController().signal,
+        }),
+      )
+      const okProj = projAfter.includes('客户A/官网二期')
+      const execAfter = textOf(
+        await ctx.tools.execute({
+          callId: brandString<ToolCallId>('w4'),
+          name: 'zentao_project',
+          arguments: { id: 2 },
+          signal: new AbortController().signal,
+        }),
+      )
+      const okExec = execAfter.includes('阶段·开发') && execAfter.includes('迭代1')
+      console.log(`\n[driver] 项目/执行写后校验：新项目已建=${okProj ? '是 ✅' : '否 ❌'}；执行已建=${okExec ? '是 ✅' : '否 ❌'}`)
+      if (!okProj || !okExec) failed = true
 
       // 写后校验：103 已转给 zhangsan；新任务已建在 lisi 名下。
       const zhangsanTasks = textOf(

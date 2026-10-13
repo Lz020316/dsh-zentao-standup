@@ -273,6 +273,33 @@ class ZentaoClient {
       body: JSON.stringify(body),
     })
   }
+
+  /** 创建项目（POST /projects），model 可选 scrum/waterfall/waterfallplus/agileplus/kanban/ipd。 */
+  async createProject(fields: Record<string, unknown>) {
+    return this.request<any>('projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    })
+  }
+
+  /** 创建执行（阶段/迭代/看板，POST /executions），type 可选 stage/sprint/kanban，parent 指定父执行。 */
+  async createExecution(fields: Record<string, unknown>) {
+    return this.request<any>('executions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    })
+  }
+
+  /** 更新执行（PUT /execution/{id}），可改 name/begin/end/status/PM/desc 等（改期/续期/关执行）。 */
+  async updateExecution(id: number, fields: Record<string, unknown>) {
+    return this.request<any>(`execution/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    })
+  }
 }
 
 // ──────────────────────────────── 渲染工具函数 ────────────────────────────────
@@ -386,6 +413,18 @@ function renderWriteResult(label: string, task: any): string {
   lines.push(`- 状态：${statusOf(TASK_STATUS, task.status)}`)
   lines.push(`- 负责人：${assignee ?? '-'}`)
   lines.push(`- 截止：${day(task.deadline)}`)
+  return lines.join('\n')
+}
+
+/** 渲染一次项目/执行写操作的结果：成功确认 + 通用字段回读。 */
+function renderEntityWrite(label: string, obj: any): string {
+  if (!obj) return `✅ ${label} 已完成`
+  const lines: string[] = [`✅ ${label} 已完成`]
+  lines.push('')
+  lines.push(`- ID：${obj.id ?? '-'}`)
+  if (obj.name) lines.push(`- 名称：${obj.name}`)
+  if (obj.status != null) lines.push(`- 状态：${statusOf(EXECUTION_STATUS, obj.status)}`)
+  if (obj.begin) lines.push(`- 起止：${day(obj.begin)} ~ ${day(obj.end)}`)
   return lines.join('\n')
 }
 
@@ -796,6 +835,111 @@ function registerTools(ctx: Context, config: Config, client: ZentaoClient) {
       },
     }),
   )
+
+  // ──────────────────────────────── 项目/执行写操作工具 ────────────────────────────────
+
+  ctx.tools.register(
+    defineTool({
+      name: 'zentao_project_create',
+      description:
+        '⚠️ 写操作：创建禅道项目。model 取值：waterfallplus（融合瀑布，默认）/ scrum（敏捷）/ agileplus（融合敏捷）/ kanban（看板）/ waterfall（瀑布）。begin/end 必填（结束日期禁填「长期」）。会真实修改禅道数据，调用前务必先向用户确认。',
+      parameters: {
+        name: { type: 'string', required: true, description: '项目名，建议「客户名/项目名」。' },
+        begin: { type: 'string', required: true, description: '开始日期 YYYY-MM-DD。' },
+        end: { type: 'string', required: true, description: '结束日期 YYYY-MM-DD（禁填「长期」）。' },
+        model: { type: 'string', description: '项目模型：waterfallplus（融合瀑布）/ scrum（敏捷）/ agileplus（融合敏捷）/ kanban（看板）/ waterfall（瀑布）。默认 waterfallplus。' },
+        products: { type: 'string', description: '可选：关联产品 ID，逗号分隔，如 "1,2"。默认不关联。' },
+        PM: { type: 'string', description: '可选：项目负责人账号。' },
+        desc: { type: 'string', description: '可选：项目描述。' },
+      },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      async execute(args) {
+        const fields: Record<string, unknown> = {
+          name: args.name,
+          begin: args.begin,
+          end: args.end,
+          model: args.model || 'waterfallplus',
+          products: args.products ? String(args.products).split(',').map((s) => Number(s.trim())).filter(Boolean) : [],
+        }
+        if (args.PM) fields.PM = args.PM
+        if (args.desc) fields.desc = args.desc
+        const project = await client.createProject(fields)
+        return renderEntityWrite('项目创建', project)
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'zentao_execution_create',
+      description:
+        '⚠️ 写操作：在项目下创建执行（阶段/迭代/看板）。type 取值：stage（阶段）/ sprint（迭代）/ kanban（看板）。建子阶段/子迭代时传 parent（父执行 ID）。会真实修改禅道数据，调用前务必先向用户确认。',
+      parameters: {
+        project: { type: 'number', required: true, description: '所属项目 ID。' },
+        name: { type: 'string', required: true, description: '执行名称，如「阶段·开发」「迭代1」。' },
+        begin: { type: 'string', required: true, description: '开始日期 YYYY-MM-DD。' },
+        end: { type: 'string', required: true, description: '结束日期 YYYY-MM-DD。' },
+        type: { type: 'string', description: '执行类型：stage（阶段）/ sprint（迭代）/ kanban（看板）。缺省由项目模型决定。' },
+        parent: { type: 'number', description: '可选：父执行 ID（建子阶段/子迭代时用）。' },
+        lifetime: { type: 'string', description: '可选：生命周期类型 ops（运维）/ short（短期）/ long（长期）。' },
+        PM: { type: 'string', description: '可选：执行负责人账号。' },
+        desc: { type: 'string', description: '可选：描述。' },
+      },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      async execute(args) {
+        const fields: Record<string, unknown> = {
+          project: args.project,
+          name: args.name,
+          begin: args.begin,
+          end: args.end,
+        }
+        if (args.type) fields.type = args.type
+        if (args.parent !== undefined) fields.parent = args.parent
+        if (args.lifetime) fields.lifetime = args.lifetime
+        if (args.PM) fields.PM = args.PM
+        if (args.desc) fields.desc = args.desc
+        const execution = await client.createExecution(fields)
+        return renderEntityWrite('执行创建', execution)
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'zentao_execution_update',
+      description:
+        '⚠️ 写操作：更新执行（阶段/迭代/看板）字段。用于改期/续期、改名称、改负责人、改状态（wait/doing/suspended/closed 关闭）。会真实修改禅道数据，调用前务必先向用户确认。',
+      parameters: {
+        id: { type: 'number', required: true, description: '执行 ID。' },
+        name: { type: 'string', description: '可选：名称。' },
+        begin: { type: 'string', description: '可选：开始日期 YYYY-MM-DD。' },
+        end: { type: 'string', description: '可选：结束日期 YYYY-MM-DD（改期/续期）。' },
+        status: { type: 'string', description: '可选：状态 wait / doing / suspended / closed（关闭）。' },
+        PM: { type: 'string', description: '可选：负责人账号。' },
+        desc: { type: 'string', description: '可选：描述。' },
+      },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      async execute(args) {
+        const a = args as Record<string, any>
+        const fields: Record<string, unknown> = {}
+        for (const k of ['name', 'begin', 'end', 'status', 'PM', 'desc']) {
+          if (a[k] !== undefined && a[k] !== '') fields[k] = a[k]
+        }
+        if (Object.keys(fields).length === 0) return '（没有提供任何要更新的字段，未做改动）'
+        const execution = await client.updateExecution(a.id, fields)
+        return renderEntityWrite(`执行 #${a.id} 更新`, execution)
+      },
+    }),
+  )
 }
 
 // ──────────────────────────────── 插件入口 ────────────────────────────────
@@ -812,5 +956,5 @@ export function apply(ctx: Context, config: Config) {
   const client = new ZentaoClient(config)
   registerTools(ctx, config, client)
 
-  console.log(`[zentao-standup] 已加载（baseUrl=${config.baseUrl.replace(/\/+$/, '')}，工具=10，persona=${config.persona}）`)
+  console.log(`[zentao-standup] 已加载（baseUrl=${config.baseUrl.replace(/\/+$/, '')}，工具=13，persona=${config.persona}）`)
 }

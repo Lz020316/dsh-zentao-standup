@@ -22,18 +22,21 @@
 | `zentao_task_update` | **更新任务字段**：描述 / 负责人 / 截止日期 / 优先级 / 预估工时 / 名称 / 状态 | **写** |
 | `zentao_task_action` | **任务状态流转**：start / finish / close / pause / activate / restart | **写** |
 | `zentao_task_create` | **创建新任务**（需指定迭代、负责人、类型、起止日期） | **写** |
+| `zentao_project_create` | **创建项目**（选模型：融合瀑布/敏捷/融合敏捷/看板/瀑布） | **写** |
+| `zentao_execution_create` | **创建执行**（阶段 / 迭代 / 看板，可建子阶段/子迭代） | **写** |
+| `zentao_execution_update` | **更新执行**（改期/续期、改名称、改负责人、改状态/关闭） | **写** |
 
-共 **10 个工具**：7 个只读 + 3 个写操作。
+共 **13 个工具**：7 个只读 + 6 个写操作。
 
-> ⚠️ **写操作会真实修改禅道数据。** 三个写工具（`zentao_task_update` / `zentao_task_action` /
-> `zentao_task_create`）在调用前，AI 应先向你把要改的内容说清楚、经你确认后再执行。
-> 如果只想查询、不想冒任何改动风险，就不调用这三个写工具即可。
+> ⚠️ **写操作会真实修改禅道数据。** 六个写工具（`zentao_task_*`、`zentao_project_create`、
+> `zentao_execution_*`）在调用前，AI 应先向你把要改的内容说清楚、经你确认后再执行。
+> 如果只想查询、不想冒任何改动风险，就不调用这些写工具即可。
 
 ## 目录结构
 
 ```
 dsh-zentao-standup/
-├── src/index.ts          # 主插件：Config + ZenTao 客户端 + 10 个工具 + 人设
+├── src/index.ts          # 主插件：Config + ZenTao 客户端 + 13 个工具 + 人设
 ├── dist/index.js         # esbuild 打包产物（bundle 加载的就是它）
 ├── preset/               # 遗留的 Agent 预设（已不推荐，见下文「配置方式」）
 ├── examples/             # 冒烟测试（内置 mock 禅道服务器，无需真实禅道）
@@ -149,9 +152,10 @@ npx --yes esbuild src/index.ts --bundle --format=esm --platform=node \
 ## Roadmap
 
 - [x] 任务写操作：创建任务 / 更新任务字段 / 状态流转（start·finish·close·pause·activate·restart）
+- [x] 项目/执行写操作：创建项目（选模型）/ 创建执行（阶段·迭代·看板）/ 更新执行（改期·续期·关闭）
 - [ ] 「设置 → 插件 → 插件配置」里的图形化输入框（需为插件补一套客户端 `dsh.client` 卡片 bundle）
 - [ ] 需求（Story）、Bug、待办（todo）的查询与写操作
-- [ ] 项目 / 迭代（执行）层面的写操作（关闭项目、创建/续期迭代等）
+- [ ] 项目关闭、产品归档、团队增员等更细的写操作
 - [ ] 写操作的强制审批机制（让 AI 必须先经用户确认再落库，而非仅靠描述约束）
 
 ## License
